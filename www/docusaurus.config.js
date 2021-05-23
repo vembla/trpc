@@ -79,6 +79,22 @@ module.exports = {
       ],
       // copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
     },
+    algolia: {
+      // hey algolia support, my email is alex@kattcorp.com
+      apiKey: 'YOUR_API_KEY',
+      indexName: 'YOUR_INDEX_NAME',
+
+      // Optional: see doc section below
+      contextualSearch: true,
+
+      // Optional: see doc section below
+      appId: 'YOUR_APP_ID',
+
+      // Optional: Algolia search parameters
+      searchParameters: {},
+
+      //... other Algolia params
+    },
   },
   presets: [
     [
