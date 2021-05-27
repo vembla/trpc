@@ -85,8 +85,9 @@ export function getStatusCodeFromError(err: TRPCError): number {
   return STATUS_CODE_MAP[err.code] ?? 500;
 }
 
-export function getQueryInput(query: qs.ParsedQs) {
-  const queryInput = query.input;
+export function getQueryInput(query: qs.ParsedQs | URLSearchParams) {
+  const queryInput =
+    query instanceof URLSearchParams ? query.get('input') : query.input;
   if (!queryInput) {
     return undefined;
   }
@@ -105,12 +106,35 @@ export type CreateContextFn<TRouter extends AnyRouter, TRequest, TResponse> = (
   opts: CreateContextFnOptions<TRequest, TResponse>,
 ) => inferRouterContext<TRouter> | Promise<inferRouterContext<TRouter>>;
 
-export type BaseRequest = http.IncomingMessage & {
+export interface BaseRequest {
   method?: string;
-  query?: qs.ParsedQs;
+  query?: qs.ParsedQs | URLSearchParams;
   body?: any;
-};
+  socket?: http.IncomingMessage['socket'];
+  url?: string;
+  on?: http.IncomingMessage['on'];
+  off?: http.IncomingMessage['off'];
+  once?: http.IncomingMessage['once'];
+}
 export type BaseResponse = http.ServerResponse;
+
+type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | Date
+  | JSONValue[]
+  | { [key: string]: JSONValue };
+
+// borrowed from svelte kit
+type HttpResponse =
+  | { status: 204; headers?: Record<string, string>; body?: JSONValue }
+  | {
+      status: number;
+      headers: Record<string, string>;
+      body: JSONValue;
+    };
 
 export interface BaseOptions<
   TRouter extends AnyRouter,
@@ -154,6 +178,11 @@ async function getPostBody({
       resolve(req.body);
       return;
     }
+    if (!req.on || !req.off || !req.socket) {
+      // svelte hack
+      resolve(undefined);
+      return;
+    }
     let body = '';
     req.on('data', function (data) {
       body += data;
@@ -164,7 +193,7 @@ async function getPostBody({
             code: 'BAD_USER_INPUT',
           }),
         );
-        req.socket.destroy();
+        req.socket!.destroy();
       }
     });
     req.on('end', () => {
@@ -192,11 +221,11 @@ const HTTP_METHOD_PROCEDURE_TYPE_MAP: Record<
   PATCH: 'subscription',
 };
 
-export async function requestHandler<
+export async function resolveRequest<
   TRouter extends AnyRouter,
   TCreateContextFn extends CreateContextFn<TRouter, TRequest, TResponse>,
   TRequest extends BaseRequest,
-  TResponse extends BaseResponse,
+  TResponse extends BaseResponse | null,
 >({
   req,
   res,
@@ -204,7 +233,6 @@ export async function requestHandler<
   path,
   subscriptions,
   createContext,
-  teardown,
   transformer = {
     serialize: (data) => data,
     deserialize: (data) => data,
@@ -217,7 +245,7 @@ export async function requestHandler<
   path: string;
   router: TRouter;
   createContext: TCreateContextFn;
-} & BaseOptions<TRouter, TRequest>) {
+} & Omit<BaseOptions<TRouter, TRequest>, 'teardown'>): Promise<HttpResponse> {
   let type: 'unknown' | ProcedureType = 'unknown';
   let input: unknown = undefined;
   let ctx: inferRouterContext<TRouter> | undefined = undefined;
@@ -236,9 +264,10 @@ export async function requestHandler<
 
     const caller = router.createCaller(ctx);
     type = HTTP_METHOD_PROCEDURE_TYPE_MAP[req.method!] ?? 'unknown';
+
     const getInput = async () => {
       if (type === 'query') {
-        const query = req.query ? req.query : url.parse(req.url!, true).query;
+        const query = req.query ? req.query : url.parse(req!.url!, true).query;
         const input = getQueryInput(query);
         return deserializeInput(input);
       }
@@ -252,9 +281,9 @@ export async function requestHandler<
     input = await getInput();
 
     if (method === 'HEAD') {
-      res.statusCode = 204;
-      res.end();
-      return;
+      return {
+        status: 204,
+      };
     } else if (type === 'query') {
       output = await caller.query(path, input);
     } else if (type === 'mutation') {
@@ -281,8 +310,8 @@ export async function requestHandler<
           sub.off('data', onData);
           sub.off('error', onError);
           sub.off('destroy', onDestroy);
-          req.off('close', onClose);
-          res.off('close', onClose);
+          req.off?.('close', onClose);
+          res?.off('close', onClose);
           clearTimeout(requestTimeoutTimer);
           clearTimeout(backpressureTimer);
           sub.destroy();
@@ -338,8 +367,8 @@ export async function requestHandler<
         sub.on('data', onData);
         sub.on('error', onError);
         sub.on('destroy', onDestroy);
-        req.once('close', onClose);
-        res.once('close', onClose);
+        req.once?.('close', onClose);
+        res?.once('close', onClose);
         requestTimeoutTimer = setTimeout(onRequestTimeout, requestTimeoutMs);
         sub.start();
       });
@@ -349,14 +378,18 @@ export async function requestHandler<
         code: 'BAD_USER_INPUT',
       });
     }
-    const json: HTTPSuccessResponseEnvelope<unknown> = {
+    const json: HTTPSuccessResponseEnvelope<any> = {
       ok: true,
-      statusCode: res.statusCode ?? 200,
+      statusCode: res?.statusCode ?? 200,
       data: output,
     };
-    res.statusCode = json.statusCode;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(combinedTransformer.output.serialize(json)));
+    return {
+      status: json.statusCode,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: combinedTransformer.output.serialize(json),
+    };
   } catch (_err) {
     const error = getErrorFromUnknown(_err);
 
@@ -365,13 +398,45 @@ export async function requestHandler<
       statusCode: getStatusCodeFromError(error),
       error: router.getErrorShape({ error, type, path, input, ctx }),
     };
-    res.statusCode = json.statusCode;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(combinedTransformer.output.serialize(json)));
     onError && onError({ error, path, input, ctx, type: type, req });
+    return {
+      status: json.statusCode,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: combinedTransformer.output.serialize(json),
+    };
   }
+}
+
+export async function requestHandler<
+  TRouter extends AnyRouter,
+  TCreateContextFn extends CreateContextFn<TRouter, TRequest, TResponse>,
+  TRequest extends BaseRequest,
+  TResponse extends BaseResponse,
+>(
+  opts: {
+    req: TRequest;
+    res: TResponse;
+    path: string;
+    router: TRouter;
+    createContext: TCreateContextFn;
+  } & BaseOptions<TRouter, TRequest>,
+) {
+  const result = await resolveRequest(opts);
+
+  const { res } = opts;
+  res.statusCode = result.status;
+  for (const [key, value] of Object.entries(result.headers ?? {})) {
+    res.setHeader(key, value);
+  }
+  const body =
+    typeof result.body !== 'undefined'
+      ? JSON.stringify(result.body)
+      : undefined;
+  res.end(body);
   try {
-    teardown && (await teardown());
+    opts.teardown?.();
   } catch (err) {
     throw new Error('Teardown failed ' + err?.message);
   }

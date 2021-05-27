@@ -1,4 +1,11 @@
-import * as trpc from '@trpc/server';
+import * as trpcServer from '../../server/src';
+jest.mock('@trpc/server', () => trpcServer);
+import * as trpcClient from '../../client/src';
+jest.mock('@trpc/client', () => trpcClient);
+import * as trpcReact from '../../react/src';
+jest.mock('@trpc/react', () => trpcReact);
+import * as trpcReact__ssg from '../../react/src/ssg';
+jest.mock('@trpc/react/ssg', () => trpcReact__ssg);
 import superjson from 'superjson';
 import devalue from 'devalue';
 import { z } from 'zod';
@@ -10,7 +17,7 @@ test('superjson up and down', async () => {
   const date = new Date();
   const fn = jest.fn();
   const { client, close } = routerToServerAndClient(
-    trpc.router().query('hello', {
+    trpcServer.router().query('hello', {
       input: z.date(),
       resolve({ input }) {
         fn(input);
@@ -30,7 +37,7 @@ test('superjson up and down', async () => {
 });
 
 test('devalue up and down', async () => {
-  const transformer: trpc.DataTransformer = {
+  const transformer: trpcServer.DataTransformer = {
     serialize: (object) => devalue(object),
     deserialize: (object) => eval(`(${object})`),
   };
@@ -38,7 +45,7 @@ test('devalue up and down', async () => {
   const date = new Date();
   const fn = jest.fn();
   const { client, close } = routerToServerAndClient(
-    trpc.router().query('hello', {
+    trpcServer.router().query('hello', {
       input: z.date(),
       resolve({ input }) {
         fn(input);
@@ -58,7 +65,7 @@ test('devalue up and down', async () => {
 });
 
 test('superjson up and devalue down', async () => {
-  const transformer: trpc.CombinedDataTransformer = {
+  const transformer: trpcServer.CombinedDataTransformer = {
     input: superjson,
     output: {
       serialize: (object) => devalue(object),
@@ -69,7 +76,7 @@ test('superjson up and devalue down', async () => {
   const date = new Date();
   const fn = jest.fn();
   const { client, close } = routerToServerAndClient(
-    trpc.router().query('hello', {
+    trpcServer.router().query('hello', {
       input: z.date(),
       resolve({ input }) {
         fn(input);
@@ -92,7 +99,7 @@ test('all transformers running in correct order', async () => {
   const world = 'foo';
   const fn = jest.fn();
 
-  const transformer: trpc.CombinedDataTransformer = {
+  const transformer: trpcServer.CombinedDataTransformer = {
     input: {
       serialize: (object) => {
         fn('client:serialized');
@@ -116,7 +123,7 @@ test('all transformers running in correct order', async () => {
   };
 
   const { client, close } = routerToServerAndClient(
-    trpc.router().query('hello', {
+    trpcServer.router().query('hello', {
       input: z.string(),
       resolve({ input }) {
         fn(input);

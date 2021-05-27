@@ -25,12 +25,17 @@ export interface CreateHttpHandlerOptions<TRouter extends AnyRouter>
   extends BaseOptions<TRouter, http.IncomingMessage> {
   createContext: CreateHttpContextFn<TRouter>;
   router: TRouter;
+  path?: string;
 }
 export function createHttpHandler<TRouter extends AnyRouter>(
   opts: CreateHttpHandlerOptions<TRouter>,
 ) {
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
-    const endpoint = url.parse(req.url!).pathname!.substr(1);
+    const path = opts.path ?? '';
+    const endpoint = url
+      .parse(req.url!)
+      .pathname!.substr(1)
+      .substr(path.length);
     await requestHandler({
       ...opts,
       req,
