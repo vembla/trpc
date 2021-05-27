@@ -1,6 +1,7 @@
 import type { Request } from '@sveltejs/kit';
 import type { Locals } from '$lib/types';
-
+import { createTRPCClient } from '@trpc/client';
+import type { AppRouter } from '../trpc/[trpc].json';
 /*
 	This module is used by the /todos.json and /todos/[uid].json
 	endpoints to make calls to api.svelte.dev, which stores todos
@@ -54,3 +55,10 @@ export async function api(
     body: await res.json(),
   };
 }
+
+export const client = createTRPCClient<AppRouter>({
+  url: 'http://localhost/3000',
+  fetchOpts: {
+    fetch: fetch,
+  },
+});
