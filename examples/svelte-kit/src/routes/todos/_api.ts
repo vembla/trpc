@@ -56,9 +56,7 @@ export async function api(
   };
 }
 
+// FIXME
 export const client = createTRPCClient<AppRouter>({
   url: 'http://localhost/3000',
-  fetchOpts: {
-    fetch: fetch,
-  },
 });
