@@ -1,8 +1,8 @@
 ---
-id: RPC
+id: rpc
 title: Subscriptions / WebSockets / JSON-RPC 2.0
 sidebar_label: Subscriptions / WebSockets / JSON-RPC 2.0
-slug: /RPC
+slug: /rpc
 ---
 
 :::warning
