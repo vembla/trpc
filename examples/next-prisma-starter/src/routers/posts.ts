@@ -12,7 +12,7 @@ function orderByMagic<TOrderBy extends Prisma.Enumerable<unknown>>() {
   return z
     .unknown()
     .refine((obj) => {
-      const shape = z.record(z.literal('asc').or(z.literal('desc')));
+      const shape = z.record(z.enum(['asc', 'desc']));
 
       const sortBy = shape.or(z.array(shape));
 
