@@ -5,8 +5,21 @@
 
 import { z } from 'zod';
 import { createRouter } from 'pages/api/trpc/[trpc]';
-import { PostOrderByInput, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 // import { PostOrderByInput } from '@prisma/client';
+
+function orderByMagic<TOrderBy extends Prisma.Enumerable<unknown>>() {
+  return z
+    .unknown()
+    .refine((obj) => {
+      const shape = z.record(z.literal('asc').or(z.literal('desc')));
+
+      const sortBy = shape.or(z.array(shape));
+
+      return sortBy.safeParse(obj).success;
+    })
+    .transform((s) => s as NonNullable<TOrderBy>);
+}
 export const postsRouter = createRouter()
   // create
   .mutation('add', {
@@ -26,16 +39,7 @@ export const postsRouter = createRouter()
   .query('all', {
     input: z
       .object({
-        orderBy: z
-          .unknown()
-          .refine((obj) => {
-            const shape = z.record(z.literal('asc').or(z.literal('desc')));
-
-            const sortBy = shape.or(z.array(shape));
-
-            return sortBy.safeParse(obj).success;
-          })
-          .transform((s) => s as Prisma.PostFindManyArgs['orderBy']),
+        orderBy: orderByMagic<Prisma.PostFindManyArgs['orderBy']>(),
       })
       .optional(),
     async resolve({ ctx, input }) {
