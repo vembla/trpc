@@ -2,11 +2,12 @@ import Head from 'next/head';
 import { ReactQueryDevtools } from 'react-query/devtools';
 import { trpc } from '../utils/trpc';
 
-export default function IndexPage() {
+export default function IndexPage(props) {
   const postsQuery = trpc.useQuery(['posts.all']);
   const addPost = trpc.useMutation('posts.add');
   const utils = trpc.useContext();
 
+  console.log('props', props);
   return (
     <>
       <Head>
@@ -106,3 +107,14 @@ export default function IndexPage() {
 //     revalidate: 1,
 //   };
 // };
+
+export function getServerSideProps() {
+  return {
+    props: {
+      user: {
+        name: 'x',
+        email: 'y',
+      },
+    },
+  };
+}
